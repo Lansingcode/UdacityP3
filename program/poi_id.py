@@ -23,15 +23,19 @@ with open("final_project_dataset.pkl", "r") as data_file:
     data_dict = pickle.load(data_file)
 
 # data = featureFormat(data_dict, features)
+# 转化为DataFrame格式
 data_df = pd.DataFrame(data_dict).T
 data_df = data_df[features_list]
-print data_df.columns
+# print data_df.columns
+# 每个变量空值个数
 for f in features_list:
     if 'NaN' in data_df[f].unique():
         print 'There are %s null values in %s' % (str(data_df[f].value_counts()['NaN']), f)
 
+# 填充空值
 data_df.replace({'NaN': 0}, inplace=True)
 
+# 产生新变量
 data_df['from_poi_ratio'] = (data_df['from_poi_to_this_person'] / data_df['to_messages']).fillna(0)
 data_df['to_poi_ratio'] = (data_df['from_this_person_to_poi'] / data_df['from_messages']).fillna(0)
 
@@ -73,16 +77,13 @@ my_dataset = data_dict
 ### Extract features and labels from dataset for local testing
 # data = featureFormat(my_dataset, features_list, sort_keys=True)
 # labels, features = targetFeatureSplit(data)
-import numpy as np
 
-# print data_df.describe()
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.model_selection import GridSearchCV
 
-scaler = StandardScaler()
 
-my_features = ['poi', 'salary', 'total_payments', 'bonus', 'deferred_income', 'deferral_payments', 'total_stock_value',
+my_features = ['poi', 'salary', 'total_payments', 'bonus', 'deferred_income', 'total_stock_value',
                'expenses', 'exercised_stock_options', 'other',
                'long_term_incentive', 'restricted_stock', 'to_messages', 'from_poi_to_this_person', 'from_messages',
                'from_this_person_to_poi', 'shared_receipt_with_poi', 'from_poi_ratio', 'to_poi_ratio']
@@ -97,23 +98,21 @@ features = data_df[my_features[1:]].values
 
 # Provided to give you a starting point. Try a variety of classifiers.
 from sklearn.naive_bayes import GaussianNB
+from sklearn.svm import SVC
+from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.decomposition import PCA
 
 # 朴素贝叶斯
-clf = GaussianNB()
-pipe_gnb = Pipeline(steps=[('scaler', scaler), ('pca', PCA()), ('clf', clf)])
+scaler = StandardScaler()
+pipe_gnb = Pipeline(steps=[('scaler', scaler), ('pca', PCA()), ('clf', GaussianNB())])
 test_classifier(pipe_gnb, labels, features, my_features)
 
 # SVC
-from sklearn.svm import SVC
-
 pipe_svc = Pipeline(steps=[('scaler', scaler), ('pca', PCA()), ('clf', SVC())])
 test_classifier(pipe_svc, labels, features, my_features)
 
 # 逻辑回归
-from sklearn.linear_model import LogisticRegression
-
 pipe_lr = Pipeline(steps=[('scaler', scaler), ('pca', PCA()), ('clf', LogisticRegression())])
 test_classifier(pipe_lr, labels, features, my_features)
 
@@ -132,42 +131,51 @@ test_classifier(pipe_lr, labels, features, my_features)
 from sklearn.pipeline import FeatureUnion
 from sklearn.feature_selection import SelectKBest
 
-pca = PCA(n_components=8)
-selector = SelectKBest(k=5)
-combined_features = FeatureUnion([('pca', pca), ('kbest', selector)])
+# pca = PCA(n_components=8)
+# selector = SelectKBest(k=5)
+# combined_features = FeatureUnion([('pca', pca), ('kbest', selector)])
 # combined_features.fit(features, labels).transform(features)
-print 'combined_features:\n', combined_features
+# print 'combined_features:\n', combined_features
 
 # 朴素贝叶斯
 print 'GaussianNB:'
-pipe_gnb = Pipeline(steps=[('features', combined_features), ('clf', GaussianNB())])
+pipe_gnb = Pipeline(steps=[('pca', PCA()), ('clf', GaussianNB())])
+param_grid = {'pca__n_components': range(1, 10)}
+gs = GridSearchCV(pipe_gnb, param_grid=param_grid)
+gs.fit(features, labels)
+print gs.best_params_, gs.best_score_
+
+pipe_gnb.set_params(pca__n_components=6)
 test_classifier(pipe_gnb, labels, features, my_features)
 
 # SVC
-from sklearn.svm import SVC
-
+print 'SVC:'
 pipe_svc = Pipeline(steps=[('scaler', scaler), ('pca', PCA()), ('clf', SVC())])
 param_grid = {'pca__n_components': range(1, 11), 'clf__kernel': ['linear', 'rbf'], 'clf__C': [0.1, 1, 10]}
 cv = StratifiedShuffleSplit(n_splits=5, test_size=0.3, random_state=0)
-grid_svc = GridSearchCV(pipe_svc, param_grid=param_grid, cv=cv)
-grid_svc.fit(features, labels)
-print 'SVC:'
-print grid_svc.best_params_, grid_svc.best_score_
+gs = GridSearchCV(pipe_svc, param_grid=param_grid, cv=cv)
+gs.fit(features, labels)
+print gs.best_params_, gs.best_score_
+
+pipe_svc.set_params(pca__n_components=2)
+test_classifier(pipe_svc, labels, features, my_features)
+
 
 # 逻辑回归
-from sklearn.linear_model import LogisticRegression
-
+print 'LogisticRegression:'
 pipe_lr = Pipeline(steps=[('scaler', scaler), ('pca', PCA()), ('clf', LogisticRegression())])
 param_grid = [{'pca__n_components': range(1, 10)}]
 cv = StratifiedShuffleSplit(n_splits=5, test_size=0.3, random_state=0)
-grid_lr = GridSearchCV(pipe_lr, param_grid=param_grid, cv=cv)
-grid_lr.fit(features, labels)
-print 'LogisticRegression:'
-print grid_lr.best_params_, grid_lr.best_score_
+gs = GridSearchCV(pipe_lr, param_grid=param_grid, cv=cv)
+gs.fit(features, labels)
 
+print gs.best_params_, gs.best_score_
+
+pipe_svc.set_params(pca__n_components=6)
+test_classifier(pipe_lr, labels, features, my_features)
 ### Task 6: Dump your classifier, dataset, and features_list so anyone can
 ### check your results. You do not need to change anything below, but make sure
 ### that the version of poi_id.py that you submit can be run on its own and
 ### generates the necessary .pkl files for validating your results.
 
-dump_classifier_and_data(clf, my_dataset, features_list)
+dump_classifier_and_data(pipe_gnb, my_dataset, features_list)
