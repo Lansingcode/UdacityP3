@@ -24,7 +24,10 @@ with open("final_project_dataset.pkl", "r") as data_file:
 
 # data = featureFormat(data_dict, features)
 # 转化为DataFrame格式
-data_df = pd.DataFrame(data_dict).T
+data_df = pd.DataFrame(data_dict)
+data_df.drop('LOCKHART EUGENE E', axis=1, inplace=True)  # 去除异常值
+
+data_df = data_df.T
 data_df = data_df[features_list]
 # print data_df.columns
 # 每个变量空值个数
@@ -82,7 +85,6 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.model_selection import GridSearchCV
 
-
 my_features = ['poi', 'salary', 'total_payments', 'bonus', 'deferred_income', 'total_stock_value',
                'expenses', 'exercised_stock_options', 'other',
                'long_term_incentive', 'restricted_stock', 'to_messages', 'from_poi_to_this_person', 'from_messages',
@@ -102,18 +104,32 @@ from sklearn.svm import SVC
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.decomposition import PCA
+from sklearn.feature_selection import SelectKBest
+
+# 根据重要性挑选变量
+data_select=SelectKBest(k=10).fit(features,labels)
+print my_features[1:]
+print data_select.scores_
+
+my_features = ['poi', 'salary', 'total_payments', 'bonus', 'deferred_income', 'total_stock_value',
+               'expenses', 'exercised_stock_options',
+               'long_term_incentive', 'restricted_stock', 'to_messages', 'from_poi_to_this_person',
+               'from_this_person_to_poi', 'shared_receipt_with_poi', 'from_poi_ratio', 'to_poi_ratio']
 
 # 朴素贝叶斯
 scaler = StandardScaler()
-pipe_gnb = Pipeline(steps=[('scaler', scaler), ('pca', PCA()), ('clf', GaussianNB())])
+# pipe_gnb = Pipeline(steps=[('scaler', scaler), ('pca', PCA()), ('clf', GaussianNB())])
+pipe_gnb = Pipeline(steps=[('scaler', scaler), ('skb',SelectKBest(k=10)),('pca', PCA(n_components=5)), ('clf', GaussianNB())])
 test_classifier(pipe_gnb, labels, features, my_features)
 
 # SVC
-pipe_svc = Pipeline(steps=[('scaler', scaler), ('pca', PCA()), ('clf', SVC())])
+# pipe_svc = Pipeline(steps=[('scaler', scaler), ('pca', PCA()), ('clf', SVC())])
+pipe_svc = Pipeline(steps=[('scaler', scaler), ('skb',SelectKBest(k=10)),('pca', PCA(n_components=5)), ('clf', SVC())])
 test_classifier(pipe_svc, labels, features, my_features)
 
 # 逻辑回归
-pipe_lr = Pipeline(steps=[('scaler', scaler), ('pca', PCA()), ('clf', LogisticRegression())])
+# pipe_lr = Pipeline(steps=[('scaler', scaler), ('pca', PCA()), ('clf', LogisticRegression())])
+pipe_lr = Pipeline(steps=[('scaler', scaler), ('skb',SelectKBest(k=10)),('pca', PCA(n_components=5)), ('clf', LogisticRegression())])
 test_classifier(pipe_lr, labels, features, my_features)
 
 ### Task 5: Tune your classifier to achieve better than .3 precision and recall
@@ -139,19 +155,19 @@ from sklearn.feature_selection import SelectKBest
 
 # 朴素贝叶斯
 print 'GaussianNB:'
-pipe_gnb = Pipeline(steps=[('pca', PCA()), ('clf', GaussianNB())])
-param_grid = {'pca__n_components': range(1, 10)}
+pipe_gnb = Pipeline(steps=[('skb', SelectKBest()), ('clf', GaussianNB())])
+param_grid = {'skb__k': range(10, 15)}
 gs = GridSearchCV(pipe_gnb, param_grid=param_grid)
 gs.fit(features, labels)
 print gs.best_params_, gs.best_score_
 
-pipe_gnb.set_params(pca__n_components=6)
+pipe_gnb.set_params(skb__k=gs.best_params_['skb__k'])
 test_classifier(pipe_gnb, labels, features, my_features)
 
 # SVC
 print 'SVC:'
 pipe_svc = Pipeline(steps=[('scaler', scaler), ('pca', PCA()), ('clf', SVC())])
-param_grid = {'pca__n_components': range(1, 11), 'clf__kernel': ['linear', 'rbf'], 'clf__C': [0.1, 1, 10]}
+param_grid = {'pca__n_components': range(1,10), 'clf__kernel': ['linear', 'rbf'], 'clf__C': [0.1, 1, 10]}
 cv = StratifiedShuffleSplit(n_splits=5, test_size=0.3, random_state=0)
 gs = GridSearchCV(pipe_svc, param_grid=param_grid, cv=cv)
 gs.fit(features, labels)
@@ -159,7 +175,6 @@ print gs.best_params_, gs.best_score_
 
 pipe_svc.set_params(pca__n_components=2)
 test_classifier(pipe_svc, labels, features, my_features)
-
 
 # 逻辑回归
 print 'LogisticRegression:'
